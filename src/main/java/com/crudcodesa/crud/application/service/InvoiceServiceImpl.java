@@ -9,6 +9,8 @@ import java.time.format.DateTimeFormatter;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
 import com.crudcodesa.crud.application.dto.InvoiceDTO;
@@ -30,17 +32,24 @@ public class InvoiceServiceImpl implements InvoiceService {
 
     private static final Logger logger = LoggerFactory.getLogger(InvoiceServiceImpl.class);
 
-
     @Override
-    public ResponseDTO createInvoice(InvoiceDTO invoice) {
-
+    public ResponseEntity<ResponseDTO> createInvoice(InvoiceDTO invoice) {
         try {
+            if (invoice == null || invoice.getNameCustomer() == null || invoice.getResources() == null) {
+                return new ResponseEntity<ResponseDTO>(new ResponseDTO("Por favor, ingrese todos los datos de la factura", 400, null),
+                        HttpStatus.BAD_REQUEST);
+            }
 
             InvoiceEntity invoiceEntity = new InvoiceEntity();
 
             List<ResourceEntity> invoiceResources = this.convertToResourceEntities(invoice.getResources());
-            Long totalPrice = this.calculateTotalInvoicePrice(invoiceResources);
 
+            if (invoiceResources.isEmpty()) {
+                return new ResponseEntity<ResponseDTO>(new ResponseDTO("Recursos no encontrados", 404, null),
+                        HttpStatus.NOT_FOUND);
+            }
+
+            Long totalPrice = this.calculateTotalInvoicePrice(invoiceResources);
             invoiceEntity.setDate(this.getCurrentDate());
             invoiceEntity.setNameCustomer(invoice.getNameCustomer());
             invoiceEntity.setResources(invoiceResources);
@@ -48,31 +57,60 @@ public class InvoiceServiceImpl implements InvoiceService {
 
             invoiceRepository.save(invoiceEntity);
 
-            return new ResponseDTO("Factura creada con éxito", 200, null);
+            return new ResponseEntity<ResponseDTO>(new ResponseDTO("Factura creada con éxito", 200, null), HttpStatus.OK);
 
+        } catch (IllegalArgumentException e) {
+            logger.error("Error de validación al crear la factura", e.getMessage());
+            return new ResponseEntity<ResponseDTO>(new ResponseDTO(e.getMessage(), 400, null),
+                    HttpStatus.BAD_REQUEST);
         } catch (Exception e) {
             logger.error("Error al crear la factura", e);
-            return new ResponseDTO("Hubo un error al crear la factura", 500, null);
+            return new ResponseEntity<ResponseDTO>(new ResponseDTO("Hubo un error interno al crear la factura", 500, null),
+                    HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
 
     @Override
-    public ResponseDTO deleteInvoice(Long id) {
-        invoiceRepository.deleteById(id);
-        return new ResponseDTO("Factura eliminada con éxito", 200, null);
+    public ResponseEntity<ResponseDTO> deleteInvoice(Long id) {
+        try {
+
+            Optional<InvoiceEntity> invoice = invoiceRepository.findById(id); 
+
+            if (invoice.isPresent()) {
+                invoiceRepository.deleteById(id);
+                return new ResponseEntity<ResponseDTO>(new ResponseDTO("Factura eliminada con éxito", 200, null), HttpStatus.OK);
+            } else {
+                return new ResponseEntity<ResponseDTO>(new ResponseDTO("Factura no encontrada", 404, null),
+                        HttpStatus.NOT_FOUND);
+            }
+        } catch (Exception e) {
+            logger.error("Error al crear la factura", e);
+            return new ResponseEntity<ResponseDTO>(new ResponseDTO("Hubo un error interno al eliminar la factura", 500, null),
+                    HttpStatus.INTERNAL_SERVER_ERROR);
+        }
     }
 
     @Override
-    public ResponseDTO findAll() {
-        List<InvoiceEntity> invoices = invoiceRepository.findAll();
-        return new ResponseDTO("Facturas encontradas con éxito", 200, invoices);
+    public ResponseEntity<ResponseDTO> findAll() {
+
+        try {
+            List<InvoiceEntity> invoices = invoiceRepository.findAll();
+            return new ResponseEntity<ResponseDTO>(new ResponseDTO("Facturas encontradas con éxito", 200, invoices), HttpStatus.OK);
+            
+        } catch (Exception e) {
+            logger.error("Error al actualizar la factura", e);
+            return new ResponseEntity<ResponseDTO>(new ResponseDTO("Hubo un error interno al actualizar la factura", 500, null),
+                    HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+
     }
 
     @Override
-    public ResponseDTO updateInvoice(InvoiceDTO invoice) {
+    public ResponseEntity<ResponseDTO> updateInvoice(InvoiceDTO invoice) {
         try {
             if (invoice.getInvoiceId() == null) {
-                return new ResponseDTO("El ID de la factura no puede ser nulo", 400, null);
+                return new ResponseEntity<ResponseDTO>(new ResponseDTO("El id de la factura no puede ser nulo", 400, null),
+                        HttpStatus.BAD_REQUEST);
             }
 
             Optional<InvoiceEntity> optionalInvoiceEntity = invoiceRepository.findById(invoice.getInvoiceId());
@@ -91,25 +129,37 @@ public class InvoiceServiceImpl implements InvoiceService {
 
                 invoiceRepository.save(invoiceEntity);
 
-                return new ResponseDTO("Factura actualizada con éxito", 200, null);
+                return new ResponseEntity<ResponseDTO>(new ResponseDTO("Factura actualizada con éxito", 200, null), HttpStatus.OK);
             } else {
-                return new ResponseDTO("Factura no encontrada", 404, null);
+                return new ResponseEntity<ResponseDTO>(new ResponseDTO("Factura no encontrada", 404, null),
+                        HttpStatus.NOT_FOUND);
             }
         } catch (Exception e) {
             logger.error("Error al actualizar la factura", e);
-            return new ResponseDTO("Hubo un error al actualizar la factura", 500, null);
+            return new ResponseEntity<ResponseDTO>(new ResponseDTO("Hubo un error interno al actualizar la factura", 500, null),
+                    HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
 
     private List<ResourceEntity> convertToResourceEntities(List<ResourceDTO> resourceDTOs) {
         return resourceDTOs.stream()
                 .map(dto -> {
-                    ResourceEntity entity = new ResourceEntity();
+                    if (dto.getResourceId() == null) {
+                        throw new IllegalArgumentException("No se encuentra el ID de recurso (resourceId)");
+                    }
 
-                    entity.setId(dto.getResourceId());
-                    entity.setName(this.getResourceData(dto.getResourceId()).getName());
-                    entity.setPrice(dto.getPrice());
-                    return entity;
+                    try {
+                        ResourceEntity entity = new ResourceEntity();
+    
+                        entity.setId(dto.getResourceId());
+                        entity.setName(this.getResourceData(dto.getResourceId()).getName());
+                        entity.setPrice(dto.getPrice());
+                        return entity;
+                        
+                    } catch (Exception e) {
+                        throw new IllegalArgumentException("El recurso que intenta relacionar a la factura no existe");
+                    }
+
                 })
                 .collect(Collectors.toList());
     }
@@ -140,5 +190,4 @@ public class InvoiceServiceImpl implements InvoiceService {
         return fecha;
     }
 
-    
 }

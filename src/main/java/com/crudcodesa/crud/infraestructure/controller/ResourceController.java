@@ -10,6 +10,7 @@ import com.crudcodesa.crud.application.service.ResourceServiceImpl;
 import lombok.AllArgsConstructor;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 
 @RestController
@@ -20,19 +21,17 @@ public class ResourceController {
     private final ResourceServiceImpl resourceServiceImpl;
 
     @GetMapping("")
-    public ResponseDTO findAll() {
+    public ResponseEntity<ResponseDTO> findAll() {
+
         return resourceServiceImpl.findAll();
+
     }
 
     @PostMapping("/create")
-    public ResponseDTO saveResource(@RequestBody ResourceDTO resource) {
+    public ResponseEntity<ResponseDTO> saveResource(@RequestBody ResourceDTO resource) { 
 
-        try {
-            resourceServiceImpl.createResource(resource);
-            return new ResponseDTO("Insumo creado con éxito", 200, null);
-        } catch (Exception e) {
-            return new ResponseDTO("Hubo un error en la creación del insumo", 500, resourceServiceImpl.createResource(resource));
-        }
+            return resourceServiceImpl.createResource(resource);
+
     }
 
 }
